@@ -19,6 +19,7 @@ dx2       = dx * dx                          # dx squared
 tolerance = 1e-8                             # how precise we want to satisfy the boundary conditions
 emax      = 1500                              # probe for E_b < emax
 #
+mn        = (938.3+939.6)/2.0
 redm      = 1.0/2.0*(938.3+939.6)/2.0        # mass parameter of the radial equation
 MeVfm     = 197.3161329                      # c=1 => MeVfm=hbar^2
 b3        = 0.2
@@ -26,6 +27,93 @@ b3        = 0.2
 lam       = 4.0
 D_1       = 5.5032
 R0        = 1.0/lam                          # range of the 3-body interaction [fm]
+#
+# check parity (A.5)
+phi      = np.arctan(np.sqrt(3))
+phi_schl = np.arctan(np.sqrt(3))
+def klein_f(lambd): return np.sin(np.sqrt(lambd)*(phi-np.pi/2.0))/np.sin(2*phi)
+def klein_f_schl(lambd): return np.sin(np.sqrt(lambd)*(phi_schl-np.pi/2.0))/np.sin(2*phi_schl)
+#
+def alpha0(x):
+    return np.arcsin(1/(x*lam*np.sqrt(2)))
+def kappa_0(rho,lambd,V_ff):
+    return np.sqrt(2*mn/MeVfm**2*V_ff*rho**2+lambd)
+def kappa_scp(rho,lambd,V_fc):
+    return np.sqrt(2*mn/MeVfm**2*(1+gamma_s/4.0)*V_fc*rho**2+lambd)
+def kappa_scm(rho,lambd,V_fc):
+    return np.sqrt(2*mn/MeVfm**2*(1-3.0*gamma_s/4.0)*V_fc*rho**2+lambd)
+#                                               nn   sc-   sc+
+# spin overlap functions C_ij_sisj , (i,s) = (1,0),(2,0),(3,1)
+# the overlap is symmetric: C_ij_sisj=C_ji_sjsi
+C_12_00 = -1./2.
+C_21_00 = C_12_00
+C_13_00 = -1./2.
+C_31_00 = C_13_00
+C_12_01 = np.sqrt(3./4.)
+C_21_10 = C_12_01
+C_13_01 = -np.sqrt(3./4.)
+C_31_10 = C_13_01
+C_23_00 = -1./2.
+C_32_00 = C_23_00
+C_23_11 = -1./2.
+C_32_11 = C_23_11
+C_23_01 = np.sqrt(3.)/2.
+C_32_10 = C_23_01
+C_23_10 = -np.sqrt(3.)/2.
+C_32_01 = C_23_10
+#
+def D1(rho,lambd,V_ff):
+    return kappa_0(rho,lambd,V_ff) * np.sin((alpha0(rho)-np.pi/2.)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_0(rho,lambd,V_ff)) - np.sqrt(lambd) * np.cos((alpha0(rho)-np.pi/2.)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_0(rho,lambd,V_ff))
+def D2(rho,lambd,V_fc):
+    return kappa_scm(rho,lambd,V_fc) * np.sin((alpha0(rho)-np.pi/2.)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_scm(rho,lambd,V_fc)) - np.sqrt(lambd) * np.cos((alpha0(rho)-np.pi/2.)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_scm(rho,lambd,V_fc))
+def D3(rho,lambd,V_fc):
+    return kappa_scp(rho,lambd,V_fc) * np.sin((alpha0(rho)-np.pi/2.)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_scp(rho,lambd,V_fc)) - np.sqrt(lambd) * np.cos((alpha0(rho)-np.pi/2.)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_scp(rho,lambd,V_fc))
+#
+def F_12(rho,lambd,V_ff):
+    return (kappa_0(rho,lambd,V_ff) * np.sin(alpha0(rho)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_0(rho,lambd,V_ff)) - np.sqrt(lambd) * np.cos(alpha0(rho)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_0(rho,lambd,V_ff)))*4./np.sqrt(lambd)*klein_f(lambd)
+def F_21(rho,lambd,V_fc):
+    return (kappa_scm(rho,lambd,V_fc) * np.sin(alpha0(rho)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_scm(rho,lambd,V_fc)) - np.sqrt(lambd) * np.cos(alpha0(rho)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_scm(rho,lambd,V_fc)))*2./np.sqrt(lambd)*klein_f(lambd)
+def F_13(rho,lambd,V_ff):
+    return (kappa_0(rho,lambd,V_ff) * np.sin(alpha0(rho)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_0(rho,lambd,V_ff)) - np.sqrt(lambd) * np.cos(alpha0(rho)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_0(rho,lambd,V_ff)))*4./np.sqrt(lambd)*klein_f(lambd)
+def F_31(rho,lambd,V_fc):
+    return (kappa_scp(rho,lambd,V_fc) * np.sin(alpha0(rho)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_scp(rho,lambd,V_fc)) - np.sqrt(lambd) * np.cos(alpha0(rho)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_scp(rho,lambd,V_fc)))*2./np.sqrt(lambd)*klein_f(lambd)
+def F_23(rho,lambd,V_fc):
+    return (kappa_scm(rho,lambd,V_fc) * np.sin(alpha0(rho)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_scm(rho,lambd,V_fc)) - np.sqrt(lambd) * np.cos(alpha0(rho)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_scm(rho,lambd,V_fc)))*2./np.sqrt(lambd)*klein_f(lambd)
+def F_32(rho,lambd,V_fc):
+    return (kappa_scp(rho,lambd,V_fc) * np.sin(alpha0(rho)*np.sqrt(lambd)) * np.cos(alpha0(rho)*kappa_scp(rho,lambd,V_fc)) - np.sqrt(lambd) * np.cos(alpha0(rho)*np.sqrt(lambd)) * np.sin(alpha0(rho)*kappa_scp(rho,lambd,V_fc)))*2./np.sqrt(lambd)*klein_f(lambd)
+#
+def d11(rho,lambd,V_ff):
+    return D1(rho,lambd,V_ff)
+def d22(rho,lambd,V_fc):
+    return D2(rho,lambd,V_fc)+F_23(rho,lambd,V_fc)*C_23_00
+def d33(rho,lambd,V_fc):
+    return D3(rho,lambd,V_fc)-F_32(rho,lambd,V_fc)*C_23_11
+def d12(rho,lambd,V_fc):
+    return F_12(rho,lambd,V_fc)*C_12_00
+def d21(rho,lambd,V_fc):
+    return F_21(rho,lambd,V_fc)*C_21_00
+def d23(rho,lambd,V_fc):
+    return F_23(rho,lambd,V_fc)*C_23_01
+def d32(rho,lambd,V_fc):
+    return F_32(rho,lambd,V_fc)*C_32_10
+def d13(rho,lambd,V_fc):
+    return F_13(rho,lambd,V_fc)*C_13_01
+def d31(rho,lambd,V_fc):
+    return F_31(rho,lambd,V_fc)*C_31_10
+#
+def det_D(rho,lambd,V_fc,V_ff):
+    return d11(rho,lambd,V_ff)*d22(rho,lambd,V_fc)*d33(rho,lambd,V_fc)+d12(rho,lambd,V_fc)*d23(rho,lambd,V_fc)*d31(rho,lambd,V_fc)+d13(rho,lambd,V_fc)*d21(rho,lambd,V_fc)*d32(rho,lambd,V_fc)-d12(rho,lambd,V_fc)*d21(rho,lambd,V_fc)*d33(rho,lambd,V_fc)-d11(rho,lambd,V_fc)*d23(rho,lambd,V_fc)*d32(rho,lambd,V_fc)-d13(rho,lambd,V_fc)*d22(rho,lambd,V_fc)*d31(rho,lambd,V_fc)
+#
+gamma_s = 1.1
+print det_D(1,1,1.1,1.3)
+exit()
+# -------------------------------------------------------------------------------------------------
+# angular-eigenvalue equation: two identical fermions (neutron,neutron) interacting with
+# a core (proton)
+# 
+
+
+# -------------------------------------------------------------------------------------------------
 # for lim x-> infty the solution to the free Schroedinger equation sets the boundary condition
 # i.e., an exponential decay
 def asymptotic_boundary(E_val): return np.exp(-np.sqrt(2*redm*E_val/MeVfm**2)*xm)
@@ -34,7 +122,8 @@ def asymptotic_boundary(E_val): return np.exp(-np.sqrt(2*redm*E_val/MeVfm**2)*xm
 # for performance reasons the parameterization of the potential
 # is hard-wired
 def V(x,lam,co): return co*np.exp(-lam*x**2)
-def V_eff(x,ro,d1):
+
+def V_eff_tni(x,ro,d1):
     if x<ro:
         return MeVfm**2/(2.0*redm)*d1
     else:
