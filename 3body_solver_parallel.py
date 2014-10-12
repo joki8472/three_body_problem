@@ -1,12 +1,23 @@
 #!/usr/bin/python
 """
-Program for finding the stationary states of linear harmonic oscillator.
-We assumer here \hbar = m = \omega = 1.
-Expected energy eigenvalues are therefore n + 1/2 where n = 0, 1, ...
+algorithm to solve the three-body problem
+- coordinate space
+- Feddeev wave-function ansatz
+- two identical fermions interacting with a core (neutron-neutron-proton)
+- two- and three-body interactions regulated via theta functions ("square wells")
+- identical regulator parameters for 2- and 3-body vertices, i.e. one Lambda (!)
+- mass normalization equals the mass of the particles which in turn have identical masses:
+  m_norm = m_proton = m_neutron
+- procedure:
+  (i)    obtain angular eigenvalue from transcendental equation det(D)=0 (numerically) => lam = f(a_nn,a_np(s=0),a_np(s=1),Lambda,rho))
+  (ii)   solve hyperradial equation via Numerov for the lowest eigenvalue
+  (iii)  adjust the hyperradial regulator depth (H(Lambda)) to yield an energy close to zeros
+  (iv)   goto (i) and set Lambda = Lambda + delta (eventually, we are interested in H(Lambda) )
 """
 
 import sys                              # for emergency exit
 import numpy as np                      # for NumPy arrays
+from scipy import optimize
 from scipy.optimize import brentq       # for root finding
 import matplotlib.pyplot as plt         # for plotting
 import time
@@ -28,6 +39,30 @@ lam       = 4.0
 D_1       = 5.5032
 R0        = 1.0/lam                          # range of the 3-body interaction [fm]
 #
+# relate scattering lengths to the 2-body-interaction strengths, V_ff,V_fc+,V_fc-
+def A_of_V(vv,lam,afit):
+    return (np.tan(np.sqrt(vv)/(lam*np.sqrt(2.)))/np.sqrt(vv)*(lam*np.sqrt(2.))-1.)/lam - afit
+
+fig = plt.figure()
+ax1 = fig.add_subplot(111)
+xx = np.arange(77,81,0.1)
+yy = [ A_of_V( cc,4.0,0.0) for cc in xx]
+plt.plot(xx,yy)
+#plt.show()
+
+print A_of_V(79.64,4.0,-22.7)   
+#exit()
+
+def V_of_A():
+    lam   = 4.0
+    afit  = -22.7
+
+    res = optimize.root(A_of_V, 9.64, args=(lam,afit) )
+    return res
+
+print V_of_A()
+exit()
+
 # check parity (A.5)
 phi      = np.arctan(np.sqrt(3))
 phi_schl = np.arctan(np.sqrt(3))
