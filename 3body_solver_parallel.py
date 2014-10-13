@@ -14,55 +14,61 @@ algorithm to solve the three-body problem
   (iii)  adjust the hyperradial regulator depth (H(Lambda)) to yield an energy close to zeros
   (iv)   goto (i) and set Lambda = Lambda + delta (eventually, we are interested in H(Lambda) )
 """
-
+# -------------------------------------------------------------------------------------------------
 import sys                              # for emergency exit
 import numpy as np                      # for NumPy arrays
 from scipy import optimize
 from scipy.optimize import brentq       # for root finding
 import matplotlib.pyplot as plt         # for plotting
+
 import time
 import multiprocessing as mp
-
-n         = 2000                             # how many points we use for integration
-xm        = 10                               # at which value of x we stop
-dx        = float(xm) / n                    # step over the x-axis
-dx2       = dx * dx                          # dx squared
-tolerance = 1e-8                             # how precise we want to satisfy the boundary conditions
-emax      = 1500                              # probe for E_b < emax
+# -------------------------------------------------------------------------------------------------
+n            = 4000                             # how many points we use for integration
+xm           = 20                               # at which value of x we stop
+dx           = float(xm) / n                    # step over the x-axis
+dx2          = dx * dx                          # dx squared
+tolerance    = 1e-8                             # how precise we want to satisfy the boundary conditions
+emax         = 1500                              # probe for E_b < emax
+numerov_grid = np.linspace(0, xm, n+1)         # grid in the x-direction
 #
 mn        = (938.3+939.6)/2.0
 redm      = 1.0/2.0*(938.3+939.6)/2.0        # mass parameter of the radial equation
 MeVfm     = 197.3161329                      # c=1 => MeVfm=hbar^2
 b3        = 0.2
+a_ff      = -18.0                            # [fm], neutron-neutron scattering length, 'experimental' value 
+a_fcm     = -23.7                            # [fm], singlet S=0 neutron-proton scattering length
+a_fcp     = +5.42                            # [fm], triplet S=1 neutron-proton scattering length
 #
-lam       = 4.0
-D_1       = 5.5032
-R0        = 1.0/lam                          # range of the 3-body interaction [fm]
-#
+lam       = 8.0
+# -------------------------------------------------------------------------------------------------
 # relate scattering lengths to the 2-body-interaction strengths, V_ff,V_fc+,V_fc-
+# use equ.(96) on p.214
 def A_of_V(vv,lam,afit):
-    return (np.tan(np.sqrt(vv)/(lam*np.sqrt(2.)))/np.sqrt(vv)*(lam*np.sqrt(2.))-1.)/lam - afit
+    if abs(afit)>10**(-5):
+        return abs((np.tan(np.sqrt(vv)/(lam*np.sqrt(2.)))/np.sqrt(vv)*(lam*np.sqrt(2.))-1.)/lam - afit)
+    else:
+        return (np.tan(np.sqrt(vv)/(lam*np.sqrt(2.)))/np.sqrt(vv)*(lam*np.sqrt(2.))-1.)/lam
 
-fig = plt.figure()
-ax1 = fig.add_subplot(111)
-xx = np.arange(77,81,0.1)
-yy = [ A_of_V( cc,4.0,0.0) for cc in xx]
-plt.plot(xx,yy)
-#plt.show()
+def V_of_A(lam,afit,vo):
+    try:
+        res = optimize.fmin(A_of_V, vo, args=(lam,afit), disp=0 )
+        return res
+    except:
+        print 'no solution for V_0(a=%2.2f,v0=%4.2f) found.\n Try a different vo' %(afit,vo)
+        exit()
 
-print A_of_V(79.64,4.0,-22.7)   
-#exit()
-
-def V_of_A():
-    lam   = 4.0
-    afit  = -22.7
-
-    res = optimize.root(A_of_V, 9.64, args=(lam,afit) )
-    return res
-
-print V_of_A()
-exit()
-
+try:
+    v0 = 1000;
+    v_0_ff = V_of_A(lam,a_ff,v0)
+    print 'a_ff (Lambda=%1.1f fm^-1,v=%2.2f fm^-2) = %2.2f fm' %(lam,v_0_ff,A_of_V(v_0_ff,lam,0.0)[0])
+    v_0_fcp = V_of_A(lam,a_fcp,v0)
+    print 'a_fcp (Lambda=%1.1f fm^-1,v=%2.2f fm^-2) = %2.2f fm' %(lam,v_0_fcp,A_of_V(v_0_fcp,lam,0.0)[0])
+    v_0_fcm = V_of_A(lam,a_fcm,v0)
+    print 'a_fcm (Lambda=%1.1f fm^-1,v=%2.2f fm^-2) = %2.2f fm\n--' %(lam,v_0_fcm,A_of_V(v_0_fcm,lam,0.0)[0])
+except:
+    print 'I failed to determine well depths from the scattering lengths with the specified initial guess.'
+# -------------------------------------------------------------------------------------------------
 # check parity (A.5)
 phi      = np.arctan(np.sqrt(3))
 phi_schl = np.arctan(np.sqrt(3))
@@ -136,12 +142,57 @@ def d13(rho,lambd,V_fc):
 def d31(rho,lambd,V_fc):
     return F_31(rho,lambd,V_fc)*C_31_10
 #
-def det_D(rho,lambd,V_fc,V_ff):
+def det_D(lambd,rho,V_ff,V_fc):
     return d11(rho,lambd,V_ff)*d22(rho,lambd,V_fc)*d33(rho,lambd,V_fc)+d12(rho,lambd,V_fc)*d23(rho,lambd,V_fc)*d31(rho,lambd,V_fc)+d13(rho,lambd,V_fc)*d21(rho,lambd,V_fc)*d32(rho,lambd,V_fc)-d12(rho,lambd,V_fc)*d21(rho,lambd,V_fc)*d33(rho,lambd,V_fc)-d11(rho,lambd,V_fc)*d23(rho,lambd,V_fc)*d32(rho,lambd,V_fc)-d13(rho,lambd,V_fc)*d22(rho,lambd,V_fc)*d31(rho,lambd,V_fc)
+# -------------------------------------------------------------------------------------------------
+# V_original from the effective, scaled values, equ.(103,104,and 74f)
+v_ff = MeVfm**2/(2.*mn)*v_0_ff
 #
-gamma_s = 1.1
-print det_D(1,1,1.1,1.3)
-exit()
+gamma_s = 4.*(v_0_fcp-v_0_fcm)/(3.*v_0_fcp+v_0_fcm)
+v_fc = 0.25*MeVfm**2/(2.*mn)*(3*v_0_fcp+v_0_fcm)
+#
+lambda_n = []
+lambd0 = 9.0
+for gp in numerov_grid[::-1]:
+    if (gp<(1./lam)):
+        print (gp),(1./lam)
+        lambda_n.append(0.0)
+    else:
+        lambda_n.append(optimize.fmin(det_D, lambd0, args=(gp,v_ff,v_fc), disp=0 ))
+        lambd0 = lambda_n[-1]
+lambda_n = lambda_n[::-1]         
+#
+fig = plt.figure()
+ax = fig.add_subplot(111)
+ax.plot(numerov_grid,lambda_n)
+plt.show()
+#
+shwo_lam = 0
+if shwo_lam:
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    
+    for n in [5,6]:
+        lambd0  = (4*n-1)**2
+        rho_max = 40/int(lam)
+        xx = np.arange(0.1,rho_max,float(rho_max)/50.0)
+        yy = []
+        for rho in xx[::-1]:
+            yy.append(optimize.fmin(det_D, lambd0, args=(rho,v_ff,v_fc), disp=0 ))
+            lambd0 = yy[-1]
+        yy = yy[::-1]
+        xx = [ c*lam for c in xx]
+        rho_inf = 20000
+        lambd0 = (4*n-1)**2
+        labe = r'$\lim_{\rho\to\infty}\lambda(\rho) = $ %4.2f, n=%d' %(float(optimize.fmin(det_D, lambd0, args=(rho_inf,v_ff,v_fc), disp=0 )),n)
+        ax.plot(xx,yy,label=labe)
+    
+    ax.legend(loc='upper right')
+    ax.set_xlabel(r'$\rho\cdot\Lambda$')
+    ax.set_ylabel(r'$\lambda(\rho)$')
+    plt.show()
+    exit()
+
 # -------------------------------------------------------------------------------------------------
 # angular-eigenvalue equation: two identical fermions (neutron,neutron) interacting with
 # a core (proton)
@@ -158,11 +209,11 @@ def asymptotic_boundary(E_val): return np.exp(-np.sqrt(2*redm*E_val/MeVfm**2)*xm
 # is hard-wired
 def V(x,lam,co): return co*np.exp(-lam*x**2)
 
-def V_eff_tni(x,ro,d1):
+def V_eff(x,ro,d1,lll):
     if x<ro:
-        return MeVfm**2/(2.0*redm)*d1
+        return -MeVfm**2/(2.0*redm)*d1
     else:
-        return -MeVfm**2/(2.0*redm)*(15.0/4.0 - 1.01251)/x**2
+        return -MeVfm**2/(2.0*redm)*(15.0/4.0 + lll)/x**2
 
 def calc_spec(emax,de1,lamb):
     spect  = []
@@ -202,14 +253,14 @@ def calc_spec(emax,de1,lamb):
     plt.show()
     exit()
 
-# we solve (d^2/dx^2 + f(x)) y(x) = 0
-def f(n,E,lec,lam): return (2*redm/(MeVfm**2)) * (E - V_eff(n * dx,0.1*lam,lec))
+# we solve (d^2/dx^2 + f(x)) y(x) = 0                           rho    cut off D_1
+def f(n,E,lec_tni,lam): return (2*redm/(MeVfm**2)) * (E - V_eff(n * dx,1.0/lam,lec_tni,lambda_n[n]))
 
 # Numerov interation up to xm
 # This function is minimized to retrieve binding energies
 def psi_xm(E_val,lec,lam):
     """Returns the value of \Psi(x_m)."""
-    x = np.linspace(0, xm, n+1)         # grid in the x-direction
+    x = numerov_grid                    # grid in the x-direction
     y = np.zeros(n+1)                   # wave-function in individual points
     # initial conditions
     y[0] = 0
@@ -220,7 +271,7 @@ def psi_xm(E_val,lec,lam):
         y[i + 1] /= (1 + dx2 * f(i+1, E_val,lec,lam) / 12)
     return y[n]-asymptotic_boundary(-E_val)
 
-def find_shallow(de1,lambd):
+def find_shallow_ser(de1,lambd):
     xend   = 0.0
     inc    = 1.0
     const = True
@@ -237,7 +288,7 @@ def find_shallow(de1,lambd):
         #print 'E = %4.4f MeV' %E_1
         return E_1+b3
 
-def calc_shallow(de1,lambd,output):
+def find_shallow_par(de1,lambd,output):
     xend   = 0.0
     inc    = 1.5
     const = True
@@ -289,12 +340,14 @@ def fit_shallowest(lamb,D10,output):
 if __name__ == '__main__':
     
     #calc_spec(10000,-200.0,4.0)
-
+    #tmp = find_shallow(-0.0,lam)
+    #print tmp
+    #exit()
     output = mp.Queue()
 
-    L0  = 3.0
-    LE  = 4.0
-    nL  = 60
+    L0  = 8.0
+    LE  = 10.0
+    nL  = 12
     dL  = (LE-L0)/nL
     lambdas = [ float(L0 + ll*dL) for ll in range(0,nL)]
     print lambdas
@@ -303,7 +356,7 @@ if __name__ == '__main__':
     D10  = -1020.0
     #exit()
     #processes = [mp.Process(target=fit_shallowest, args=(lambd, D10, output)) for lambd in lambdas]
-    processes = [mp.Process(target=calc_shallow, args=(D10,lambd, output)) for lambd in lambdas]
+    processes = [mp.Process(target=find_shallow_par, args=(D10,lmbd, output)) for lmbd in lambdas]
     for p in processes:
         p.start()
 
