@@ -1,0 +1,27 @@
+This is pdfTeX, Version 3.1415926-2.5-1.40.14 (TeX Live 2013/Debian) (format=pdflatex 2014.9.7)  29 OCT 2014 09:32
+entering extended mode
+ restricted \write18 enabled.
+ %&-line parsing enabled.
+**3body_solver_parallel.py
+(./3body_solver_parallel.py
+LaTeX2e <2011/06/27>
+Babel <3.9h> and hyphenation patterns for 15 languages loaded.
+! You can't use `macro parameter character #' in vertical mode.
+l.1 #
+     !/usr/bin/python
+? 
+! Emergency stop.
+l.1 #
+     !/usr/bin/python
+End of file on the terminal!
+
+ 
+Here is how much of TeX's memory you used:
+ 6 strings out of 494719
+ 190 string characters out of 6173574
+ 46621 words of memory out of 5000000
+ 3460 multiletter control sequences out of 15000+600000
+ 3640 words of font info for 14 fonts, out of 8000000 for 9000
+ 80 hyphenation exceptions out of 8191
+ 5i,0n,1p,44b,8s stack positions out of 5000i,500n,10000p,200000b,80000s
+!  ==> Fatal error occurred, no output PDF file produced!

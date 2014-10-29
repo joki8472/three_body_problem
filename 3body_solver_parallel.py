@@ -21,10 +21,20 @@ import numpy as np                      # for NumPy arrays
 from scipy import optimize
 from scipy.optimize import brentq       # for root finding
 import matplotlib.pyplot as plt         # for plotting
-
+import cmath as cm
 import time
 import multiprocessing as mp
 
+cc_piless_list = {'1.50': [-86.4497,  -58.891727, 21.4797, 21.4797 ],
+                         '2.00': [-142.3643, -106.279322, 68.4883, 68.4883 ],
+                         '3.00': [-295.9365, -242.792464, 267.5588, 267.5588 ],
+                         '4.00': [ -505.1643, -434.958473, 677.7989, 677.7989  ],
+                         '6.00': [-1090.584 , -986.251897, 2652.651, 2652.651  ],
+                         '8.00': [-1898.622 ,-1760.161732, 7816.228, -2539.22994 ],
+                         '10.00':[-2929.277 ,-2756.688416, 20483.217, -3329.278037 ],
+                         '14.00':[-6451.9818 , -5419.48037  , 125857.785, 0.0]}
+
+# for debugging the 'paralized' code
 def info(title):
     print title
     #print 'module name:', __name__
@@ -32,9 +42,6 @@ def info(title):
     #    print 'parent process:', os.getppid()
     print 'process id:', os.getpid()
 # -------------------------------------------------------------------------------------------------
-def grid_gen(anz_st,max_rho):
-    return np.linspace(0, max_rho, anz_st+1)          # grid in the x-direction
-
 tolerance    = 1e-8                             # how precise we want to satisfy the boundary conditions
 #
 mn        = (938.3+939.6)/2.0
@@ -59,6 +66,15 @@ def A_of_V(vv,lam,afit):
         return abs((np.tan(np.sqrt(vv)/(lam*np.sqrt(2.)))/np.sqrt(vv)*(lam*np.sqrt(2.))-1.)/lam - afit)
     else:
         return (np.tan(np.sqrt(vv)/(lam*np.sqrt(2.)))/np.sqrt(vv)*(lam*np.sqrt(2.))-1.)/lam
+
+def plot_a_of_v(lma):
+    xx = np.arange(0.1,30)
+    yy = [ A_of_V(vb,lma,0.0) for vb in xx]
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.plot(xx,yy)
+    plt.show()
+    exit()
 
 def V_of_A(lam,afit,vo):
     try:
@@ -144,15 +160,21 @@ def d31(rho,lambd,V_fc,gamm,lamm):
 def det_D(lambd,rho,V_ff,V_fc,gamm,lamm):
     return d11(rho,lambd,V_ff,lamm)*d22(rho,lambd,V_fc,gamm,lamm)*d33(rho,lambd,V_fc,gamm,lamm)+d12(rho,lambd,V_fc,gamm,lamm)*d23(rho,lambd,V_fc,gamm,lamm)*d31(rho,lambd,V_fc,gamm,lamm)+d13(rho,lambd,V_fc,gamm,lamm)*d21(rho,lambd,V_fc,gamm,lamm)*d32(rho,lambd,V_fc,gamm,lamm)-d12(rho,lambd,V_fc,gamm,lamm)*d21(rho,lambd,V_fc,gamm,lamm)*d33(rho,lambd,V_fc,gamm,lamm)-d11(rho,lambd,V_fc,lamm)*d23(rho,lambd,V_fc,gamm,lamm)*d32(rho,lambd,V_fc,gamm,lamm)-d13(rho,lambd,V_fc,gamm,lamm)*d22(rho,lambd,V_fc,gamm,lamm)*d31(rho,lambd,V_fc,gamm,lamm)
 # -------------------------------------------------------------------------------------------------
-
+def det_D_approx(lam,rhoo,am,ap,sc,ac):
+    # dependencies: a+,a-,rho,sc,phi
+    phi = np.arctan(np.sqrt(ac*(ac+2)))
+    determinant_line1 = lam*cm.cos(np.pi/2.*cm.sqrt(lam))**2+rhoo**2/(ap*am)*cm.sin(cm.sqrt(lam)*np.pi/2.0)**2+1./2.*(rhoo/am+rhoo/ap)*cm.sqrt(lam)*cm.sin(np.pi*cm.sqrt(lam))
+    determinant_line2 = 1./(2.*sc+1)*(rhoo/am-rhoo/ap)*2./cm.sin(2*phi)*cm.sin(np.pi/2.*cm.sqrt(lam))*cm.sin((phi-np.pi/2.)*cm.sqrt(lam))-4./cm.sin(2*phi)**2*cm.sin((phi-np.pi/2.)*cm.sqrt(lam))**2
+    return (determinant_line1+determinant_line2).real
+#
 def set_eff_pot_coeff(v00,lamm):
     try:
         v0 = v00;
         v_0_ff = V_of_A(lamm,a_ff,v0)
         print 'a_ff (Lambda=%1.1f fm^-1,v=%2.2f fm^-2) = %2.2f fm' %(lamm,v_0_ff,A_of_V(v_0_ff,lamm,0.0)[0])
-        v_0_fcp = V_of_A(lamm,a_fcp,v0)
+        v_0_fcp = V_of_A(lamm,a_fcp,v0-10)
         print 'a_fcp (Lambda=%1.1f fm^-1,v=%2.2f fm^-2) = %2.2f fm' %(lamm,v_0_fcp,A_of_V(v_0_fcp,lamm,0.0)[0])
-        v_0_fcm = V_of_A(lamm,a_fcm,v0)
+        v_0_fcm = V_of_A(lamm,a_fcm,v_0_ff)
         print 'a_fcm (Lambda=%1.1f fm^-1,v=%2.2f fm^-2) = %2.2f fm\n--' %(lamm,v_0_fcm,A_of_V(v_0_fcm,lamm,0.0)[0])
     except:
         print 'I failed to determine well depths from the scattering lengths with the specified initial guess.'
@@ -165,12 +187,12 @@ def set_eff_pot_coeff(v00,lamm):
     return ff,fc,g
 #
 def calc_angular_ev(lamm,nn,xmm,output):
-    numerov_grid = grid_gen(nn,xmm)
+    numerov_grid = np.linspace(0, xmm, nn+1)
     dx           = float(xmm)/nn            # step over the x-axis
     dx2          = dx * dx                          # dx squared
-    lecs = set_eff_pot_coeff(1000.1,lamm)
+    lecs = set_eff_pot_coeff(15.1,lamm)
     lambda_n = []
-    lambd0 = 4.0
+    lambd0 = 0.0
     outstr = 'ang_ev_'+str(nn)+'_'+str(xmm)+'_%2.2f'%float(lamm)+'.dat'
     #
     if os.path.isfile(outstr):
@@ -193,33 +215,33 @@ def calc_angular_ev(lamm,nn,xmm,output):
     output.put(lambda_n)
     return      
 #
-shwo_lam = 0
-if shwo_lam:
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    
-    for n in [5,6]:
-        lammm = 4.5
-        lambd0  = (4*n-1)**2
-        rho_max = 40/int(lam)
-        xx = np.arange(0.1,rho_max,float(rho_max)/50.0)
-        yy = []
-        for rho in xx[::-1]:
-            yy.append(optimize.fmin(det_D, lambd0, args=(rho,v_ff,v_fc,lammm), disp=0 ))
-            lambd0 = yy[-1]
-        yy = yy[::-1]
-        xx = [ c*lam for c in xx]
-        rho_inf = 20000
-        lambd0 = (4*n-1)**2
-        labe = r'$\lim_{\rho\to\infty}\lambda(\rho) = $ %4.2f, n=%d' %(float(optimize.fmin(det_D, lambd0, args=(rho_inf,v_ff,v_fc,lammm), disp=0 )),n)
-        ax.plot(xx,yy,label=labe)
-    
-    ax.legend(loc='upper right')
-    ax.set_xlabel(r'$\rho\cdot\Lambda$')
-    ax.set_ylabel(r'$\lambda(\rho)$')
-    plt.show()
-    exit()
+def calc_angular_ev_approx(lamm,nn,xmm,aminus,aplus,corespin,corenuclearnumber,output):
+    numerov_grid = np.linspace(0, xmm, nn+1)
+    dx           = float(xmm)/nn            # step over the x-axis
+    dx2          = dx * dx                          # dx squared
+    lambda_n = []
+    lambd0 = 0.000001
+    lambd1 = lambd0*1.01
+    #
+    for gp in numerov_grid[::-1]:
+        sign  = np.sign(det_D_approx(lambd0 ,gp ,aminus ,aplus ,corespin ,corenuclearnumber))
+        sign2 = np.sign(det_D_approx(lambd1,gp ,aminus ,aplus ,corespin ,corenuclearnumber))
+        while sign==sign2:
+            lambd1 = lambd1 + 0.002
+            sign2 = np.sign(det_D_approx(lambd1,gp ,aminus ,aplus ,corespin ,corenuclearnumber))
+            if lambd1>10:
+                print 'no solution!'
+                continue
+        #res = optimize.brentq(det_D_approx, lambd0, lambd1 ,args=(gp,aminus,aplus,corespin,corenuclearnumber), disp=0 )
+        #res = optimize.newton(det_D_approx, lambd0, args=(gp,aminus,aplus,corespin,corenuclearnumber) )
+        res = optimize.fmin(det_D_approx, np.mean([lambd0,lambd1]), args=(gp,aminus,aplus,corespin,corenuclearnumber), disp=0 )[0]
+        # lambda = lambda_tilde - 4 => (lambda+15/4)=(lambda-1/4) is passed to the potential function
+        lambda_n.append(res-0.25)
+        lambd0 = res*0.92
 
+    output.put(lambda_n[::-1])
+
+#
 # -------------------------------------------------------------------------------------------------
 # angular-eigenvalue equation: two identical fermions (neutron,neutron) interacting with
 # a core (proton)
@@ -228,21 +250,10 @@ if shwo_lam:
 
 # -------------------------------------------------------------------------------------------------
 # for lim x-> infty the solution to the free Schroedinger equation sets the boundary condition
-# i.e., an exponential decay
-def asymptotic_boundary(E_val,rho_max): return np.exp(-np.sqrt(2*mn*E_val/MeVfm**2)*rho_max)
-
-# the (effective) interaction with [V_0] = MeV
-# for performance reasons the parameterization of the potential
-# is hard-wired
-def V(x,lam,co): return co*np.exp(-lam*x**2)
-
-def V_eff(x,ro,d1,lll):
-    if x<ro:
-        return -d1
-    else:
-        return -(15.0/4.0 + lll)/x**2
-
-def calc_spec(emax,de1,lamb):
+# i.e., an exponential decay @ not in use @
+def asymptotic_boundary(E_val,rho_max): return np.exp(0*np.sqrt(2*mn/MeVfm**2)*rho_max)*np.exp(-np.sqrt(2*mn*E_val/MeVfm**2)*rho_max)
+#
+def calc_spec(emax,de1,lamb,lambdan,grid):
     spect  = []
     xstart = 0.0
     xend   = 0.0
@@ -250,15 +261,16 @@ def calc_spec(emax,de1,lamb):
     while abs(xstart)<emax:
         const = True
         x0    = xstart
-        signum = np.sign(psi_xm(x0,de1,lamb))
+        signum = np.sign(psi_xm(x0,de1,lamb,lambdan,grid))
         while (const):
             x0 = x0 - inc
-            signum_1 = np.sign(psi_xm(x0,de1,lamb))
+            signum_1 = np.sign(psi_xm(x0,de1,lamb,lambdan,grid))
             if (signum_1<>signum)|(abs(x0)>emax):
                 const = False
                 xend = x0
         if abs(xend)<emax:
             E_1 = brentq(psi_xm, xstart, xend,args=(de1,lamb))
+            #E_1 = optimize.bisect(psi_xm, xstart, xend,args=(de1,lamb,lambdan,grid))
             print 'E = %4.4f MeV' %E_1
             spect.append(E_1)
             xstart = xend
@@ -279,171 +291,316 @@ def calc_spec(emax,de1,lamb):
         ax1.plot([1,10],[level,level],'k-',lw=2)
     plt.show()
     exit()
+#
+# th(r_1-r_2)
+def theta(rhoo_1,rhoo_2):
+    if rhoo_1>rhoo_2:
+        return 1
+    else:
+        return 0
 
-# we solve (d^2/dx^2 + f(x)) y(x) = 0                           rho    cut off D_1
-def f(E,ii,lec_tni,lamm,aev): return 2*mn*E/(MeVfm**2) - V_eff(ii*dx,1.0/lamm,lec_tni,aev)
+# we solve (d^2/drho^2 + f(rho)) y(rho) = 0, see, e.g. Hjorth-Jensen notes ch.9 equ.9.11 ff
+# ---------
+# f(x) = 2*redm/hbc^2 * (v(rho) -B -hbc^2/(2*redm)*(ang_ev/rho^2))
+# ---------
+# [lamm]  = fm^-2
+# [E_val] = MeV > 0 means bound
+# [lecc]  = MeV > 0 means attractive
+# [rhoo]  = fm
+def f_theta(E,rhoo,lecc,lamm,ang_ev):
+    # test case: for ang_ev = 0, lamm=4.0, and lecc=505.1643, an appropriate grid should yield B=2.22(4)
+    #return 2*redm/(MeVfm**2)*(lecc*np.exp(-lamm**2/4.0*rhoo**2) -E)
+    #
+    if float(rhoo)<(10**(-9)):
+        return 2*redm/(MeVfm**2)*(lecc*theta(1./lamm,rhoo) -E)
+    else:
+        return 2*redm/(MeVfm**2)*(lecc*theta(1./lamm,rhoo) -E) - theta(rhoo,1.0/lamm)*ang_ev/rhoo**2
+def f_gauss(E,rhoo,lecc,lamm,ang_ev):
+    # test case: for ang_ev = 0, lamm=4.0, and lecc=505.1643, an appropriate grid should yield B=2.22(4)
+    return 2*redm/(MeVfm**2)*(lecc*np.exp(-lamm**2/4.0*rhoo**2) -E)
 
+
+def plot_potentials(lamth,lth,lamg,lg,xm):
+    xx  = np.linspace(0,xm,10000)
+    yth = [ f_theta(0.0,rr,lth,lamth,0.0) for rr in xx ]
+    yg  = [ f_gauss(0.0,rr,lg,lamg,0.0) for rr in xx ]
+    fig = plt.figure()  
+    ax1 = fig.add_subplot(111)
+    ax1.set_xlabel(r'$\rho$ [fm]')
+    ax1.set_ylabel(r'$\frac{2\mu}{\hbar^2}V(\rho)$')
+    ax1.plot(xx,yth,label=r'$V(\rho) = $ %4.1f $C_0 e^{-\Lambda^2/4\rho^2}$' %lth)
+    ax1.plot(xx,yg,label=r'$V(\rho) = $ %4.1f $C_0 \theta(\Lambda^{-1}-\rho)$' %lg)
+    legend = ax1.legend(loc='upper right', fontsize=12)
+    plt.show()
+    exit()
+
+#plot_potentials(2,200,2,200,12)
 # Numerov interation up to xm
 # This function is minimized to retrieve binding energies
-def psi_xm(E_val,lec,lammm,lambdan,grid):
+
+# numerical outward integration on a fixed grid for a defined interaction and energy
+# application, e.g., find ground state via min(psi_joki) and use this function to
+# visualize the result
+def wfkt(E_val,lec,lammm,ang_ev,grid):
     """Returns the value of \Psi(x_m)."""
-    x = grid                    # grid in the x-direction
-    n = len(grid)-1
-    y = np.zeros(n+1)                   # wave-function in individual points
-    # initial conditions
-    y[0] = 0
-    y[1] = 1.0
-    #
-    for i in range(1,n):
-        y[i + 1] = (2 - 5 * dx2 * f(E_val,i,lec,lammm,lambdan[i]) / 6) * y[i] - (1 + dx2 * f(E_val,i-1,lec,lammm,lambdan[i-1]) / 12) * y[i - 1]
-        y[i + 1] /= (1 + dx2 * f(E_val,i+1,lec,lammm,lambdan[i+1]) / 12)
-    return y[n]-asymptotic_boundary(-E_val,x[-1])
+    x   = grid                    # grid in the x-direction
+    dex = float(grid[-1]-grid[-2])
+    dex2= dex*dex
+    n   = len(grid)-1
+    y   = np.zeros(n+1)                   # wave-function in individual points
+    yy   = np.zeros(n+1)                   # wave-function in individual points
+    # fin turning point
+    y[-1] = 0.0
+    y[-2] = 0.5*dex2
+    rho_match = 0
+    for i in range(1,n)[::-1]:        
+        y[i - 1] = (2.0 - 5.0 * dex2 * f_theta(E_val,i*dex,lec,lammm,ang_ev) / 6.0) * y[i] - (1.0 + dex2 * f_theta(E_val,(i+1)*dex,lec,lammm,ang_ev) / 12.0) * y[i + 1]
+        y[i - 1] /= (1.0 + dex2 * f_theta(E_val,(i-1)*dex,lec,lammm,ang_ev) / 12.0)
 
-def find_shallow_ser(de1,lambd,emaxi,ang_ev,grid):
-    xend   = 0.0
-    inc    = 1.0
-    const = True
-    x0    = 0.0
-    signum = np.sign(psi_xm(x0,de1,lambd,ang_ev,grid))
-    while (const):
-        x0 = x0 - inc
-        signum_1 = np.sign(psi_xm(x0,de1,lambd,ang_ev,grid))
-        print psi_xm(x0,de1,lambd,ang_ev,grid),x0,de1,lambd,ang_ev[0],asymptotic_boundary(-x0,grid[-1])
-        if (signum_1<>signum)|(abs(x0)>emaxi):
-            const = False
-            xend = x0
-    if abs(xend)<emaxi:
-        E_1 = brentq(psi_xm, x0+inc, xend,args=(de1,lambd,ang_ev,grid))
-        print 'E = %4.4f MeV' %E_1
-        return E_1+b3
+    return y
 
-def find_shallow_par(de1,lambd,ang_ev,xende,grid,output):
+def psi_joki(E_val,lec,lammm,ang_ev,grid):
+    dex  = float(grid[-1]-grid[-2])
+    dex2 = dex*dex
+    n    = len(grid)-1
+    y    = np.zeros(n+1)                   # wave-function for the inward integration
+    yy   = np.zeros(n+1)                   # wave-function for the outward integration
+    # boundary conditions at infinity
+    y[-1] = 0.0
+    y[-2] = 0.5*dex2
+    rho_match = 0
+    # integrate towards zero until y+ < y-, i.e., a turning point is reached
+    for i in range(1,n)[::-1]:        
+        y[i - 1]  = (2.0 - 5.0 * dex2 * f_theta(E_val,i*dex,lec,lammm,ang_ev[i]) / 6.0) * y[i] - (1.0 + dex2 * f_theta(E_val,(i+1)*dex,lec,lammm,ang_ev[i+1]) / 12.0) * y[i + 1]
+        y[i - 1] /= (1.0 + dex2 * f_theta(E_val,(i-1)*dex,lec,lammm,ang_ev[i-1]) / 12.0)
+        if (y[i-1]<y[i]):
+            rho_match = i+1
+            break
+    if rho_match==0:
+        #print 'no turning point!'
+        return 10^8
+    # logarithmic derivative at the matching point (crudest approximation)
+    log_diff_inward = (y[rho_match]-y[rho_match+1])/(dex*y[rho_match])
+    # initial conditions at zero
+    yy[0] = 0.0
+    yy[1] = 0.5*dex2
+    # iterate with Numerov accuracy up to the turning point
+    for i in range(1,rho_match+1):
+        yy[i + 1] = (2. - 5. * dex2 * f_theta(E_val,i*dex,lec,lammm,ang_ev[i]) / 6.) * yy[i] - (1. + dex2 * f_theta(E_val,(i-1)*dex,lec,lammm,ang_ev[i-1]) / 12.) * yy[i - 1]
+        yy[i + 1] /= (1. + dex2 * f_theta(E_val,(i+1)*dex,lec,lammm,ang_ev[i+1]) / 12.)
+    # again, logarithmic derivative at the matching point, now from the outward integration
+    log_diff_outward = (yy[rho_match]-yy[rho_match-1])/(dex*yy[rho_match])
+    # 
+    return abs(log_diff_outward-log_diff_inward)
+
+def find_shallow_par(de1,lambdaa,ang_ev,enint,grid,output):
     #info('find_shallow_par')
-    xend   = 0.0
-    inc    = 1.0
-    const = True
-    x0    = 0.0
-    signum = np.sign(psi_xm(x0,de1,lambd,ang_ev,grid))
+    x0     = enint[0]
+    xend   = enint[1]
+    E_1 = optimize.fmin(psi_joki, np.mean([x0,xend]),args=(de1,lambdaa,ang_ev,grid))[0]
+    output.put([lambdaa,E_1])
+    return
+    inc    = 0.1
+    const  = True
+    signum   = np.sign(psi_joki(x0,de1,lambdaa,ang_ev,grid))
+    signum_1 = signum
     while (const):
-        x0 = x0 - inc
-        signum_1 = np.sign(psi_xm(x0,de1,lambd,ang_ev,grid))
-        if (signum_1<>signum)|(abs(x0)>xende):
+        x0 = x0 + inc
+        signum =signum_1
+        signum_1 = np.sign(psi_joki(x0,de1,lambdaa,ang_ev,grid))
+        if (signum_1<>signum)&(x0<xend):
             const = False
             xend = x0
-    if abs(xend)<xende:
-        E_1 = brentq(psi_xm, x0+inc, xend,args=(de1,lambd,ang_ev,grid))
-        output.put([lambd,E_1])
-    else:
-        print 'no bound state found for (Lambd, D_1) = (%2.2f,%2.2f) below E_max = %4.2f' %(lambd, de1, xende)
-        output.put([lambd,0.0])
+            E_1 = brentq(psi_joki, x0-inc, x0,args=(de1,lambdaa,ang_ev,grid))
+            
+            output.put([lambdaa,E_1])
+        elif (x0>xend):
+            const = False
+            print 'no bound state found for (Lambd, D_1) = (%2.2f,%2.2f) below E_max = %4.2f' %(lambdaa, de1, xend)
+            output.put([lambdaa,0.0])
 
-def fit_shallowest(lamb,D10,ang_ev,output):
+def find_shallow_ser(de1,lambdaa,ang_ev,enint,grid,bfit=0.0):
+    x0     = enint[0]
+    xend   = enint[1]
+
+    inc    = 10.0
+    const  = True
+    signum = np.sign(psi_joki(x0,de1,lambdaa,ang_ev,grid))
+    while (const):
+        x0 = x0 + inc
+        signum_1 = np.sign(psi_joki(x0,de1,lambdaa,ang_ev,grid))
+        if (signum_1<>signum)&(x0<xend):
+            #print [enint[0],x0]
+            const = False
+            E_1 = brentq(psi_joki, enint[0], x0,args=(de1,lambdaa,ang_ev,grid))
+            #E_1 = optimize.bisect(psi_joki, x0, xend,args=(de1,lambd,ang_ev,grid))
+            return E_1-bfit
+        elif (x0>xend):
+            const = False
+            print 'no bound state found for (Lambd, D_1) = (%2.2f,%2.2f) below E_max = %4.2f' %(lambdaa, de1, xend)
+            #output.put([lambd,0.0])    
+            return 'none'
+
+def fit_shallowest(lamb,D10,ang_ev,interv,grid,bfit,output):
     const = True
-    lec_start = D10
-    lec_max   = 5000
-    lec_inc   = +100.0
-    lec       = lec_start - lec_inc
-    go        = False
+    lec   = D10
+    ueber = False
+    unter = False
     # increase D1 until 0 < B(3) < B(triton)
     cntr = 0
-    while go==False:
-        cntr = cntr+1
-        lec = lec + lec_inc
-        emb_p = find_shallow_ser(lec,lamb,ang_ev)
-        #print 'E_0(%4.2f) = %4.2f MeV' %(lec,emb_p)
-        if emb_p>0:
-            go = True
-            break
-        elif (emb_p=='none')|(emb_p==0.0):
-            lec = lec_start - lec_inc
-            lec_inc = lec_inc*0.5
-        if (lec>lec_max):
-            lec_inc = lec_inc*0.5
-            lec_max = lec_max/10
-            lec     = -100.0
-        if lec_max==1:
-            break    
-    # (i)  increase D1 until B(3)>B(triton)
-    # (ii) fit D1 to B(t)
-    if go:
-        D_1 = brentq(find_shallow_ser, lec-2.0*lec_inc, lec, args=(lamb,ang_ev))
+    fac  = 4.05
+    while (cntr<50)&(lec<10**4):
+        cntr = cntr + 1
+        emb_p = find_shallow_ser(lec,lamb,ang_ev,interv,grid,bfit)
+        # no bs yet => increase D1
+        if (emb_p=='none')|(emb_p==0.0):
+            lec = lec*fac
+        elif (emb_p>0):
+            #print 'E_0(%4.2f) = %4.2f MeV' %(lec,emb_p)
+            cntr = 0
+            ueber = lec
+            lec = lec*0.9
+            if unter<>False:
+                break
+        elif (emb_p<0):
+            #print 'E_0(%4.2f) = %4.2f MeV' %(lec,emb_p)
+            cntr = 0
+            unter = lec
+            lec = lec*1.1
+            if ueber<>False:
+                break
+    if (ueber==False)|(unter==False):
+        output.put([lamb,0.0])
+    else:
+        D_1 = brentq(find_shallow_ser, unter, ueber, args=(lamb,ang_ev,interv,grid,bfit))
         print '%4.4f  , %12.4f' %(lamb,D_1)
         output.put([lamb,D_1])
 
+def numerov_test():
+    # use commented Gaussian version of f_theta(rho) above
+    stue         = 4000     # how many points we use for integration
+    xmax         = 12        #[ 10*nn for nn in range(1,2) ]   # at which value of x we stop
+    dx           = xmax/stue #[ float(xmaxx)/stue for xmaxx in xmax ]                   # step over the x-axis
+    dx2          = dx*dx     #[ dxx * dxx for dxx in dx ]                          # dx squared
+    numerov_grid = np.linspace(0, xmax, stue+1) #[np.linspace(0, xmaxx, stue+1) for xmaxx in xmax]
+    #
+    lam = '2.00'
+    LEc = abs(cc_piless_list[str(lam)][0])
+    inter = [0.001,100]
+    eb = find_shallow_ser(LEc,float(lam),0.0,inter,numerov_grid)
+    print 'B = %2.2f MeV' %eb
+    print 'A Gaussian should yield B=B(d) \n -----------------------------'
+    #
+    vv =  [ f_theta(0.0,xxx,LEc,float(lam),0.0) for xxx in numerov_grid ]
+    yy = wfkt(eb,LEc,float(lam),0.0,numerov_grid)
+    #
+    fig = plt.figure()  
+    ax1 = fig.add_subplot(121)
+    ax1.set_xlabel(r'$\rho$ [fm]')
+    ax1.set_ylabel(r'$V_{eff}(\rho)$')
+    ax1.plot(numerov_grid,vv)
+    ax1 = fig.add_subplot(122)
+    ax1.set_ylabel(r'$\psi(\rho)$')
+    ax1.plot(numerov_grid,yy,label=r'B = %4.4f'%eb)
+    legend = ax1.legend(loc='upper right', fontsize=12)
+    plt.show()
+    exit()
+
 if __name__ == '__main__':
-    b3 = 0.0
-    stue         = 5000                             # how many points we use for integration
-    xmax         = 90                               # at which value of x we stop
-    dx           = float(xmax)/stue                    # step over the x-axis
-    dx2          = dx * dx                          # dx squared
-    numerov_grid = np.linspace(0, xmax, stue+1)    
+    # --------------------------------------------------------------------------------------------------------
+    #numerov_test()
 
-    output1 = mp.Queue()
 
-    L0  = 4.0
-    LE  = 4.5
+    inter = [0.01,20]
+    D10   = 40.0
+    bf    = 10.0
+    stue  = 5000
+    xmax  = 20
+    a_m   = -23.7
+    a_p   = 5.42
+    s_c   = 0.5
+    a_c   = 1
+    numerov_grid = np.linspace(0, xmax, stue+1)
+    L0  = 1.1
+    LE  = 2.5
     nL  = 2
     dL  = (LE-L0)/nL
     lambdas = [ float(L0 + ll*dL) for ll in range(0,nL)]
     print lambdas
-    processes1 = [mp.Process(target=calc_angular_ev, args=(lmbd, stue, xmax, output1)) for lmbd in lambdas]
+
+    output1 = mp.Queue()
+
+    processes1 = [mp.Process(target=calc_angular_ev_approx, args=(lmbd, stue, xmax, a_m, a_p, s_c, a_c, output1)) for lmbd in lambdas]
     for p in processes1:
         p.start()
        
     res1 = [output1.get() for p in processes1]
-
     # joining dead locks the queue if the returned data exceeds a limit, see https://docs.python.org/2/library/multiprocessing.html#multiprocessing-programming
     for p in processes1:
         p.join()
 
-    fig = plt.figure()  
-    ax1 = fig.add_subplot(111)
-    for hh in res1:
-        ax1.plot(numerov_grid,hh)        
-    plt.show()
+    pl = False
+    if pl:
+        fig = plt.figure()  
+        ax1 = fig.add_subplot(111)
+        for hh in range(0,len(res1)):
+            #xx = [ np.log10(fm) for fm in numerov_grid if fm>0]
+            #ax1.plot(xx,res1[hh][1:])
+            ax1.plot(numerov_grid,res1[hh])
+        plt.show()
+        exit()
     for worker in processes1:
         assert not worker.is_alive()
+    #
+    vv = [ [f_theta(0.0,i*float(xmax)/float(stue),D10,lambdas[nn],res1[nn][i]) for i in range(0,stue+1) ] for nn in range(0,len(lambdas)) ]
+    #
+    fitt = False
+    #
+    if fitt:
+        output2 = mp.Queue()
+        processes2 = [mp.Process(target=fit_shallowest, args=(lambdas[ng],D10,res1[ng],inter,numerov_grid, bf ,output2)) for ng in range(0,len(lambdas)) ]
+        #
+        for rop in processes2:
+            rop.start()
+        #   
+        res2 = [output2.get() for p in processes2]
+        #
+        for p in processes2:
+            p.join(timeout=1)
+        #
+        print(res2)
+    
+    output3 = mp.Queue()
 
-    b3   = 10.0
-    emax = 1200
-    D10  = 110.0
-    #                      de1,lambd,emaxi,ang_ev,grid
-    tmp = find_shallow_ser(D10,lambdas[0],120,res1[0],numerov_grid)
-    exit()
-
-
-    output2 = mp.Queue()
-    vv =  [ V_eff(xxx,1./lambdas[0],D10,res1[0][int(xxx/dx)]) for xxx in numerov_grid ]
-    #print vv
-    #processes = [mp.Process(target=fit_shallowest, args=(lambd, D10, output)) for lambd in lambdas]
-#    for lmbdnr in range(0,len(lambdas)):
-#        find_shallow_ser(D10,lambdas[lmbdnr], res1[lmbdnr])
-
-    processes2 = [mp.Process(target=find_shallow_par, args=(D10,lambdas[lmbdnr], res1[lmbdnr], emax, output2)) for lmbdnr in range(0,len(lambdas))]
-
-    for rop in processes2:
+    processes3 = [mp.Process(target=find_shallow_par, args=(D10,lambdas[ng],res1[ng],inter,numerov_grid, output3)) for ng in range(0,len(lambdas)) ]
+    #
+    for rop in processes3:
         rop.start()
-        
-    res2 = [output2.get() for p in processes2]
-
-    for p in processes2:
+    #   
+    res3 = [output3.get() for p in processes3]
+    #
+    for p in processes3:
         p.join(timeout=1)
+    #
+    print(res3)
 
-    print(res2)
-#
+    #
     fig = plt.figure()  
-    ax1 = fig.add_subplot(122)
+    ax1 = fig.add_subplot(133)
     ax1.set_xlabel(r'$\rho$ [fm]')
     ax1.set_ylabel(r'$V_{eff}(\rho)$')
-    #ax1 = fig.add_subplot(122)
-    ax1.plot(numerov_grid,vv)
-    ax1 = fig.add_subplot(121)
-    ax1.set_xlabel(r'$\Lambda$ [fm$^{-1}$]')
-    ax1.set_ylabel(r'$H(\Lambda)$ [MeV]')
+    [ ax1.plot(numerov_grid,ve) for ve in vv ]
+    #
+    ax1 = fig.add_subplot(131)
+    ax1.set_xlabel(r'$\Lambda$ [fm^-1]')
     ax1.set_ylabel(r'$B(3,\Lambda)$ [MeV]')
-    #ax1 = fig.add_subplot(122)
-    ax1.plot([LL[0] for LL in res2],[HH[1] for HH in res2],'ro',label=r'$B_{\min}(3,D_1=$%2.2f MeV)' %D10)
-    legend = ax1.legend(loc='lower right', fontsize=12)
+    ax1.plot([HH[0] for HH in res3],[HH[1] for HH in res3],'o',label=r'$B_{\min}(3,D_1=$%2.2f MeV)' %D10)
+    ax1 = fig.add_subplot(132)
+    ax1.set_ylabel(r'$H(\Lambda)$ [MeV]')
+    if fitt:
+        ax1.plot([HH[0] for HH in res2],[HH[1] for HH in res2],'o',label=r'$B_{\min}(3,D_1=$%2.2f MeV)' %D10)
+
+    #legend = ax1.legend(loc='lower right', fontsize=12)
     #plt.ylim(-80,0)
     #
     plt.show()
